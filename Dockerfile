@@ -1,8 +1,8 @@
 
 FROM ubuntu
 
-RUN apt-get -yqq update            \
- && apt-get -yqq install entr wget \
+RUN apt-get -yqq update       \
+ && apt-get -yqq install wget \
  && rm -rf /var/lib/apt/lists/*
 
 RUN RELEASES='https://github.com/Yelp/dumb-init/releases/download' \

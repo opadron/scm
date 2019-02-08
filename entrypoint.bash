@@ -10,7 +10,7 @@ declare -a size_limits
 declare -a node_limits
 
 usage() {
-    echo "$0 [SPEC1 [SPEC2 [...]]]"
+    echo "$0 INTERVAL [SPEC1 [SPEC2 [...]]]"
     echo "Each SPEC is a directory followed by at least one limit option"
     echo
     echo "SPEC: OPTIONS DIR"
@@ -33,17 +33,28 @@ usage() {
     echo "      of files in the directory are no greater than COUNT."
     echo "      (default: 0)"
     echo
+    echo "  INTERVAL"
+    echo "      Trigger a collection cycle every INTERVAL seconds."
+    echo
     echo "EXAMPLES"
     echo
     echo "Keep no more than 100 files in /A.  Remove files from /A if they"
     echo "are more than a day old.  Limit the storage consumed by files from"
     echo "/B to 48k.  Remove files from /B if they are more than a week old."
+    echo "Enforce these constraints with a collection cycle triggered every 30"
+    echo "seconds."
     echo
-    echo "$0 -n 100 -t $(( 60*60*24 )) /A -s 48k -t $(( 60*60*24*7 )) /B"
+    echo "$0 30 -n 100 -t $(( 60*60*24 )) /A -s 48k -t $(( 60*60*24*7 )) /B"
     echo
 
     exit 1
 }
+
+if [ "${#@}" -le 0 ] ; then
+    usage
+fi
+
+poll_interval="$1" ; shift
 
 while [ "${#@}" -gt 0 ] ; do
     arg="$1" ; shift
@@ -87,13 +98,12 @@ if [ "${#dirs[@]}" '=' '0' ] ; then
     usage
 fi
 
-_trap="rm -rf \"\$tmp\""
-_trap="${_trap} ; killall entr &> /dev/null"
+ps -ef | awk '$0~/sle{2}p/&&$3=='$$'{print $2}'
+
+
+_trap="kill \"\$sleep_pid\" &> /dev/null"
 _trap="${_trap} ; \\exit"
 trap "$_trap" INT TERM QUIT EXIT
-
-tmp="$( mktemp -d )"
-mkdir "$tmp/signal"
 
 patrol() {
     local result=0
@@ -167,26 +177,11 @@ patrol() {
     return $result
 }
 
-( exit 2 )
-while [ "$?" '=' '2' ] ; do
+true
+while [ "$?" '=' '0' ] ; do
     until patrol ; do true ; done
-
-    killall entr &> /dev/null
-
-    find "${dirs[@]}" -mindepth 1 -maxdepth 1 | head -n 1 | grep -q '.'
-    if [ "$?" '=' '0' ] ; then
-        script="x=\"$tmp/signal/dummy\""
-        script="$script ; [ -f \"\$x\" ] && rm -f \"\$x\" || touch \"\$x\""
-
-        ( find "${dirs[@]}" -mindepth 1 -maxdepth 1 |
-               entr -p bash -c "$script" &> /dev/null & )
-    fi
-
-    (
-        for dir in "${dirs[@]}" ; do
-            echo "$dir"
-        done
-        echo "$tmp/signal"
-    ) | entr -p -d true &> /dev/null
+    sleep "$poll_interval" &
+    sleep_pid="$!"
+    wait "$sleep_pid"
 done
 
